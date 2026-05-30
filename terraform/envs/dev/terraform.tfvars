@@ -1,0 +1,5 @@
+project_name = "central-platform"
+vpc_cidr     = "10.0.0.0/16"
+aws_region   = "ap-south-1"
+db_password  = "StrongPassword123!"
+origin_domain = "central-platform-frontend.s3.amazonaws.com"
