@@ -22,7 +22,7 @@ jobs:
     
     - name: Update kubeconfig
       run: |
-        aws eks update-kubeconfig --name ignite-eks-cluster --region ap-south-1
+        aws eks update-kubeconfig --name demo-eks --region ap-south-1
     
     - name: Install ArgoCD CLI
       run: |
@@ -51,7 +51,7 @@ jobs:
     
     - name: Update kubeconfig
       run: |
-        aws eks update-kubeconfig --name ignite-eks-cluster --region ap-south-1
+        aws eks update-kubeconfig --name demo-eks --region ap-south-1
     
     - name: Apply dev migrations
       run: |
