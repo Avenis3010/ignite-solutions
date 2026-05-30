@@ -1,0 +1,60 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mysql-migration
+  namespace: dev
+spec:
+  template:
+    spec:
+      containers:
+      - name: migration
+        image: mysql:8
+
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: rds-secret
+              key: DB_HOST
+
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: rds-secret
+              key: DB_NAME
+
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: rds-secret
+              key: DB_USER
+
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rds-secret
+              key: DB_PASSWORD
+
+        command:
+        - sh
+        - -c
+        - |
+          mysql \
+          -h $DB_HOST \
+          -u $DB_USER \
+          -p$DB_PASSWORD \
+          $DB_NAME \
+          < /sql/001_create_users.sql
+
+        volumeMounts:
+        - name: sql-volume
+          mountPath: /sql
+
+      restartPolicy: Never
+
+      volumes:
+      - name: sql-volume
+        configMap:
+          name: migration-sql
+
+  backoffLimit: 1
