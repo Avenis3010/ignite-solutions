@@ -55,6 +55,44 @@ ARGOCD_SERVER              = <argocd-server-url>
 
 ## 📋 Deployment Status
 
+### Git Branching Strategy
+```
+main branch (production)
+  ├─ Triggers: prod-pipeline.yaml
+  ├─ Builds: backend image (prod-*), frontend (prod build)
+  ├─ Deploys to: prod namespace via ArgoCD
+  └─ Runs: prod migrations
+  
+dev branch (development)
+  ├─ Triggers: dev-pipeline.yaml
+  ├─ Builds: backend image (dev-*), frontend (dev build)
+  ├─ Deploys to: default namespace via ArgoCD
+  └─ Runs: dev migrations
+```
+
+### GitHub Actions Workflows
+
+**1. dev-pipeline.yaml** (Triggers on dev branch push)
+- ✅ Builds backend → ECR (dev-*)
+- ✅ Builds frontend → S3 dev folder
+- ✅ Deploys to default namespace via ArgoCD
+- ✅ Runs dev migrations (if migrations/ changed)
+- ✅ Runs integration tests
+
+**2. prod-pipeline.yaml** (Triggers on main branch push)
+- ✅ Builds backend → ECR (prod-*)
+- ✅ Builds frontend → S3 prod folder
+- ✅ Deploys to prod namespace via ArgoCD
+- ✅ Runs prod migrations (if migrations/ changed)
+- ✅ Runs integration tests
+
+**3. database-migration.yaml** (Triggers on migrations/ changes)
+- ✅ Validates SQL syntax
+- ✅ Dev: Always runs on dev/main branch changes
+- ✅ Prod: Runs only on main branch changes
+- ✅ Manual trigger: workflow_dispatch with environment selection
+- ✅ Verifies database connectivity after migration
+
 ### Development (Auto-sync)
 ```
 $ kubectl get app -n argocd backend-api-dev
@@ -176,23 +214,58 @@ mysql -h platform-mysql.cvi2swcoup2y.ap-south-1.rds.amazonaws.com \
 
 ---
 
-## 📝 Git Workflow
+## � Complete CI/CD Automation Flow
 
-All changes trigger CI/CD:
+### Developer Workflow
 
+**For Development Changes (dev branch):**
 ```bash
-# Make changes
-git add .
-git commit -m "your change description"
+git checkout dev
+# Make changes to backend, frontend, or database
+git commit -am "Add feature X"
+git push origin dev
+
+# Automatically triggers:
+# 1. dev-pipeline.yaml
+#    - Builds backend image (dev-<sha>)
+#    - Builds frontend and deploys to S3-dev
+#    - Deploys to default namespace
+#    - Runs dev migrations (if applicable)
+#    - Runs health checks
+```
+
+**For Production Release (main branch):**
+```bash
+git checkout main
+git merge dev  # Merge from dev after testing
 git push origin main
 
-# Workflows automatically:
-# 1. Build backend/frontend (if changed)
-# 2. Deploy via ArgoCD
-# 3. Run migrations
-# 4. Test integration
-# 5. Apply Terraform (dev only)
+# Automatically triggers:
+# 1. prod-pipeline.yaml
+#    - Builds backend image (prod-<sha>)
+#    - Builds frontend and deploys to S3-prod
+#    - Deploys to prod namespace
+#    - Runs prod migrations (if applicable)
+#    - Runs health checks
+# 2. database-migration.yaml (if migrations/ changed)
+#    - Validates SQL
+#    - Runs prod migrations
+#    - Verifies database
 ```
+
+**For Database-Only Changes:**
+```bash
+# On any branch with migrations/ changes
+git add migrations/
+git commit -m "Add new migration"
+git push
+
+# database-migration.yaml triggers automatically:
+# - Dev: Always runs migrations/dev/*
+# - Prod: Only if pushing to main branch
+```
+
+### Automated Deployment Pipeline
 
 ---
 

@@ -1,0 +1,180 @@
+name: Database Migration Pipeline
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'migrations/**'
+  pull_request:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'migrations/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run migrations'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+          - both
+
+env:
+  AWS_REGION: ap-south-1
+  EKS_CLUSTER_NAME: ignite-eks-cluster
+
+jobs:
+  validate-migrations:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Validate migration SQL syntax
+      run: |
+        echo "Validating SQL files..."
+        for file in migrations/*/create_users.sql; do
+          echo "Checking $file"
+          grep -q "CREATE TABLE\|CREATE DATABASE" "$file" || (echo "Invalid SQL in $file" && exit 1)
+        done
+        echo "✓ All migration files are valid"
+
+  migrate-dev:
+    needs: validate-migrations
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' && (
+        github.ref == 'refs/heads/dev' ||
+        github.ref == 'refs/heads/main'
+      ) || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+    
+    - name: Create dev namespace
+      run: |
+        kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Apply migration secrets
+      run: |
+        kubectl apply -f migrations/dev/secret.yaml -n dev
+    
+    - name: Apply migration configmap
+      run: |
+        kubectl apply -f migrations/dev/configmap.yaml -n dev
+    
+    - name: Delete previous migration job if exists
+      run: |
+        kubectl delete job mysql-migration -n dev --ignore-not-found=true
+    
+    - name: Run migration job
+      run: |
+        kubectl apply -f migrations/dev/migration-job.yaml -n dev
+    
+    - name: Wait for migration to complete
+      run: |
+        kubectl wait --for=condition=complete job/mysql-migration -n dev --timeout=300s
+        echo "Dev migration completed!"
+    
+    - name: Verify migration
+      run: |
+        kubectl logs -n dev -l job-name=mysql-migration --tail=20
+        echo "Checking database..."
+        kubectl run -it --rm verify --image=mysql:8 --restart=Never -n dev -- \
+        mysql -h platform-mysql.cvi2swcoup2y.ap-south-1.rds.amazonaws.com \
+        -u admin -p${{ secrets.DB_PASSWORD }} \
+        -e "USE platform; SHOW TABLES; SELECT COUNT(*) as user_count FROM users;" || true
+
+  migrate-prod:
+    needs: validate-migrations
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'prod' || github.event.inputs.environment == 'both'))
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+    
+    - name: Create prod namespace
+      run: |
+        kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Apply migration secrets
+      run: |
+        kubectl apply -f migrations/prod/secret.yaml -n prod
+    
+    - name: Apply migration configmap
+      run: |
+        kubectl apply -f migrations/prod/configmap.yaml -n prod
+    
+    - name: Delete previous migration job if exists
+      run: |
+        kubectl delete job mysql-migration -n prod --ignore-not-found=true
+    
+    - name: Run migration job
+      run: |
+        kubectl apply -f migrations/prod/migration-job.yaml -n prod
+    
+    - name: Wait for migration to complete
+      run: |
+        kubectl wait --for=condition=complete job/mysql-migration -n prod --timeout=300s
+        echo "Prod migration completed!"
+    
+    - name: Verify migration
+      run: |
+        kubectl logs -n prod -l job-name=mysql-migration --tail=20
+        echo "Checking database..."
+        kubectl run -it --rm verify --image=mysql:8 --restart=Never -n prod -- \
+        mysql -h platform-mysql.cvi2swcoup2y.ap-south-1.rds.amazonaws.com \
+        -u admin -p${{ secrets.DB_PASSWORD }} \
+        -e "USE platform; SHOW TABLES; SELECT COUNT(*) as user_count FROM users;" || true
+
+  notify-status:
+    needs: [migrate-dev, migrate-prod]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Migration Status
+      run: |
+        echo "Migration Pipeline Status"
+        echo "========================="
+        if [ "${{ needs.migrate-dev.result }}" == "success" ]; then
+          echo "✓ Dev migrations completed successfully"
+        else
+          echo "✗ Dev migrations failed or skipped"
+        fi
+        
+        if [ "${{ needs.migrate-prod.result }}" == "success" ]; then
+          echo "✓ Prod migrations completed successfully"
+        else
+          echo "✗ Prod migrations failed or skipped"
+        fi

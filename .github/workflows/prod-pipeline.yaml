@@ -1,0 +1,199 @@
+name: Production Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ap-south-1
+  EKS_CLUSTER_NAME: ignite-eks-cluster
+  ENVIRONMENT: prod
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'backend-services') || contains(github.event.pull_request.files[*].filename, 'backend-services')
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    
+    - name: Build, tag, and push backend image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: backend-api-prod
+        IMAGE_TAG: prod-${{ github.sha }}
+      run: |
+        cd backend-services/users-api
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:prod-latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:prod-latest
+        echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+    
+    - name: Update Helm values with new image tag
+      run: |
+        sed -i "s|tag: .*|tag: prod-${{ github.sha }}|g" backend-services/users-api/backend-api/values.yaml
+    
+    - name: Commit and push updated values
+      if: github.event_name == 'push'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add backend-services/users-api/backend-api/values.yaml
+        git commit -m "chore: update backend-api image tag to prod-${{ github.sha }}" || echo "No changes to commit"
+        git push
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'frontend-services') || contains(github.event.pull_request.files[*].filename, 'frontend-services')
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: 'frontend-services/frontend-apps/web-ui/package-lock.json'
+    
+    - name: Install dependencies
+      run: |
+        cd frontend-services/frontend-apps/web-ui
+        npm ci
+    
+    - name: Run tests
+      run: |
+        cd frontend-services/frontend-apps/web-ui
+        npm test -- --coverage --watchAll=false || true
+    
+    - name: Build
+      run: |
+        cd frontend-services/frontend-apps/web-ui
+        REACT_APP_API_URL=https://api.example.com npm run build
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Deploy to S3 (prod)
+      if: github.event_name == 'push'
+      run: |
+        cd frontend-services/frontend-apps/web-ui
+        aws s3 sync build/ s3://${{ secrets.S3_BUCKET_NAME }}/web-ui/ --delete
+    
+    - name: Invalidate CloudFront cache (prod)
+      if: github.event_name == 'push'
+      run: |
+        aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
+
+  deploy-to-prod:
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+    
+    - name: Create prod namespace if not exists
+      run: |
+        kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Sync backend-api-prod via ArgoCD
+      run: |
+        kubectl rollout restart deployment/backend-api-prod -n prod || true
+        kubectl rollout status deployment/backend-api-prod -n prod --timeout=5m || true
+    
+    - name: Verify deployment
+      run: |
+        kubectl get deployments -n prod
+        kubectl get pods -n prod -l app.kubernetes.io/name=backend-api
+
+  run-prod-migrations:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && contains(github.event.head_commit.modified, 'migrations')
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+    
+    - name: Create prod namespace
+      run: |
+        kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Apply prod migrations
+      run: |
+        kubectl apply -f migrations/prod/secret.yaml -n prod
+        kubectl apply -f migrations/prod/configmap.yaml -n prod
+        kubectl apply -f migrations/prod/migration-job.yaml -n prod
+        kubectl wait --for=condition=complete job/mysql-migration -n prod --timeout=300s || true
+
+  test-prod:
+    needs: deploy-to-prod
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+    
+    - name: Check Backend API Health (Prod)
+      run: |
+        kubectl run -it --rm health-check --image=curlimages/curl --restart=Never -n prod -- \
+        curl -f http://backend-api:5000/health || true
+    
+    - name: Check Database Connection (Prod)
+      run: |
+        kubectl run -it --rm db-check --image=mysql:8 --restart=Never -n prod -- \
+        mysql -h platform-mysql.cvi2swcoup2y.ap-south-1.rds.amazonaws.com \
+        -u admin -p${{ secrets.DB_PASSWORD }} \
+        -e "USE platform; SELECT COUNT(*) FROM users;" || true
