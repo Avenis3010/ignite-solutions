@@ -23,6 +23,16 @@ jobs:
     - name: Update kubeconfig
       run: |
         aws eks update-kubeconfig --name demo-eks --region ap-south-1
+
+    - name: Install ArgoCD CLI
+      run: |
+        curl -sSL -o argocd \
+        https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+
+        chmod +x argocd
+        sudo mv argocd /usr/local/bin/
+
+        argocd version --client
     
     - name: Login to ArgoCD
       run: |
