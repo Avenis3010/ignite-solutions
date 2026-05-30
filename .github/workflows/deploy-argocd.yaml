@@ -24,13 +24,15 @@ jobs:
       run: |
         aws eks update-kubeconfig --name demo-eks --region ap-south-1
     
-    - name: Install ArgoCD CLI
+    - name: Login to ArgoCD
       run: |
-        curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-        sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
-        rm argocd-linux-amd64
-    
-    - name: Sync ArgoCD applications
+        argocd login ${{ secrets.ARGOCD_SERVER }} \
+        --username ${{ secrets.ARGOCD_USERNAME }} \
+        --password ${{ secrets.ARGOCD_PASSWORD }} \
+        --insecure \
+        --grpc-web
+
+    - name: Sync Application
       run: |
         argocd app sync backend-api-dev --grpc-web
         argocd app wait backend-api-dev --sync --grpc-web
