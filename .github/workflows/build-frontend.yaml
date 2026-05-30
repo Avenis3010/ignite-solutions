@@ -55,10 +55,12 @@ jobs:
         aws-region: ap-south-1
     
     - name: Deploy to S3
-      if: github.event_name == 'push'
+      env:
+        BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
       run: |
         cd frontend-services/frontend-apps/web-ui
-        aws s3 sync build/ s3://${{ secrets.S3_BUCKET_NAME }}/web-ui/ --delete
+        echo "Bucket=[$BUCKET_NAME]"
+        aws s3 sync build/ "s3://$BUCKET_NAME/web-ui/" --delete
     
     - name: Invalidate CloudFront cache
       if: github.event_name == 'push'
