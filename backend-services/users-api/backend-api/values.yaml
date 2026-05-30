@@ -5,7 +5,8 @@
 # This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
 replicaCount: 1
 
-# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+# This setcd c:\asmita-workspace\ignite-solutions
+git remote set-url origin https://github.com/<your-user-or-org>/ignite-solutions.gits the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
 image:
   repository: 758024567313.dkr.ecr.ap-south-1.amazonaws.com/backend-api-dev
   # This sets the pull policy for images.
@@ -54,7 +55,7 @@ service:
   # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
   type: ClusterIP
   # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
-  port: 80
+  port: 5000
 
 # This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
@@ -126,12 +127,16 @@ resources: {}
 # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
 livenessProbe:
   httpGet:
-    path: /
+    path: /health
     port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
 readinessProbe:
   httpGet:
-    path: /
+    path: /health
     port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
 
 # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
 autoscaling:
