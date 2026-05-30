@@ -24,12 +24,20 @@ jobs:
       run: |
         aws eks update-kubeconfig --name demo-eks --region ap-south-1
 
+    - name: Debug runner
+      run: |
+        pwd
+        whoami
+        df -h
+        ls -la
+
     - name: Install ArgoCD CLI
       run: |
-        VERSION=v2.14.7
-        curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/download/${VERSION}/argocd-linux-amd64
-        chmod +x argocd
-        sudo mv argocd /usr/local/bin/argocd
+        sudo curl -sSL -o /usr/local/bin/argocd \
+        https://github.com/argoproj/argo-cd/releases/download/v2.14.7/argocd-linux-amd64
+
+        sudo chmod +x /usr/local/bin/argocd
+
         argocd version --client
         
     - name: Login to ArgoCD
