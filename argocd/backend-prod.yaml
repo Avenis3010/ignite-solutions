@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backend-api-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Avenis3010/ignite-solutions.git
+    targetRevision: main
+    path: backend-services/users-api/backend-api
+    helm:
+      parameters:
+      - name: replicaCount
+        value: "2"
+      - name: autoscaling.enabled
+        value: "true"
+      - name: autoscaling.minReplicas
+        value: "2"
+      - name: autoscaling.maxReplicas
+        value: "5"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  syncPolicy:
+    syncOptions:
+    - CreateNamespace=true
+  revisionHistoryLimit: 10

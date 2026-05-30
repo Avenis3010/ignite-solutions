@@ -1,0 +1,57 @@
+name: Build & Push Backend API
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend-services/users-api/**'
+      - '.github/workflows/build-backend.yaml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'backend-services/users-api/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-south-1
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: backend-api-dev
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        cd backend-services/users-api
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+    
+    - name: Update Helm values with new image tag
+      run: |
+        sed -i "s/tag: latest/tag: ${{ github.sha }}/g" backend-services/users-api/backend-api/values.yaml
+    
+    - name: Commit and push updated values
+      if: github.event_name == 'push'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add backend-services/users-api/backend-api/values.yaml
+        git commit -m "Update backend-api image tag to ${{ github.sha }}" || echo "No changes to commit"
+        git push

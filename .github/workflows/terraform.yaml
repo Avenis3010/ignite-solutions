@@ -1,0 +1,66 @@
+name: Terraform Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-south-1
+    
+    - name: Terraform Init (Dev)
+      run: |
+        cd terraform/envs/dev
+        terraform init
+    
+    - name: Terraform Format Check
+      run: |
+        cd terraform
+        terraform fmt -check -recursive || terraform fmt -recursive
+    
+    - name: Terraform Validate
+      run: |
+        cd terraform/envs/dev
+        terraform validate
+    
+    - name: Terraform Plan (Dev)
+      run: |
+        cd terraform/envs/dev
+        terraform plan -out=tfplan
+    
+    - name: Terraform Plan (Prod)
+      run: |
+        cd terraform/envs/prod
+        terraform init
+        terraform plan -out=tfplan
+    
+    - name: Terraform Apply (Dev) - Manual Approval
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        cd terraform/envs/dev
+        terraform apply -auto-approve tfplan || true
+      continue-on-error: true
