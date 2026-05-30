@@ -42,7 +42,7 @@ jobs:
         cd frontend-services/frontend-apps/web-ui
         npm run build
     - name: Debug secrets
-      run: |
+      run: | 
         echo "KEY LENGTH: ${#AWS_ACCESS_KEY_ID}"
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
