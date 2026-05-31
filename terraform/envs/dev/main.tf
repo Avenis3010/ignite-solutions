@@ -18,9 +18,11 @@ module "ecr" {
 }
 
 module "rds" {
-  source      = "../../modules/rds"
-  subnet_ids  = module.vpc.private_subnets
-  db_password = var.db_password
+  source               = "../../modules/rds"
+  subnet_ids           = module.vpc.private_subnets
+  db_password          = var.db_password
+  vpc_id               = module.vpc.vpc_id
+  allowed_cidr_blocks  = [var.vpc_cidr]
 }
 
 module "s3" {

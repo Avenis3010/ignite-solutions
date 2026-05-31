@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mysql-query-job
+  namespace: dev
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: mysql-client
+          image: mysql:8.0
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: rds-secret
+                  key: DB_HOST
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: rds-secret
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rds-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rds-secret
+                  key: DB_PASSWORD
+          command:
+            - sh
+            - -c
+            - |
+              mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD \
+                -e "SHOW DATABASES;" && \
+              mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME \
+                -e "SHOW TABLES; SELECT * FROM users;"
