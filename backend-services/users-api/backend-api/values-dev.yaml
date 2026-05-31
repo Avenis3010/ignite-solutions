@@ -22,16 +22,9 @@ ingress:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/group.name: shared-alb
-  hosts:
-    - http:
-        paths:
-          - path: /dev
-            pathType: Prefix
-            backend:
-              service:
-                name: backend-api
-                port:
-                  number: 5000
+  paths:
+    - path: /dev
+      pathType: Prefix
 
 env:
   - name: APP_ENV
