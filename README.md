@@ -7,7 +7,7 @@
 4. [Backend — Docker Build, ECR Push, Helm & ArgoCD Deploy](#4-backend--docker-build-ecr-push-helm--argocd-deploy)
 5. [Frontend — Build & Deploy to S3 + CloudFront](#5-frontend--build--deploy-to-s3--cloudfront)
 6. [Database — RDS Setup & Migrations](#6-database--rds-setup--migrations)
-7. [ArgoCD — Auto Sync on Image Change](#7-argocd--auto-sync-on-image-change)
+7. [ArgoCD — Auto Sync on Image Change](#7-argocd--auto-sync-on-static/images/image-change)
 8. [GitHub Actions Pipelines](#8-github-actions-pipelines)
 9. [OIDC — Keyless AWS Authentication](#9-oidc--keyless-aws-authentication)
 10. [Kubernetes Secrets for RDS](#10-kubernetes-secrets-for-rds)
@@ -55,7 +55,7 @@ aws eks update-kubeconfig --name demo-eks --region ap-south-1
 # Verify cluster access
 kubectl get nodes
 ```
-![alt text](image-5.png)
+![alt text](static/images/image-5.png)
 
 ---
 
@@ -230,7 +230,7 @@ kubectl apply -f argocd/backend-prod.yaml
 
 # Check sync status
 kubectl get applications -n argocd
-  ![alt text](image-6.png)
+  ![alt text](static/images/image-6.png)
 
 # Manual sync via CLI
 argocd login <ARGOCD_SERVER> \
@@ -434,7 +434,7 @@ kubectl delete pod db-check -n dev
 ## 7. ArgoCD — Auto Sync on Image Change
 
 When a new image is pushed to ECR, the pipeline updates `values-dev.yaml` or `values-prod.yaml` with the new image tag and commits it back to the branch. ArgoCD detects the Git change and automatically redeploys.
-   ![alt text](image-7.png)
+   ![alt text](static/images/image-7.png)
 
 ```
 Push code → GitHub Actions builds image → pushes to ECR
@@ -526,10 +526,10 @@ detect-changes (dorny/paths-filter)
                                     ├── kubectl apply migration-job
                                     └── kubectl wait complete
 ```
-  ![alt text](image-8.png)
-  ![alt text](image-9.png)
-   ![alt text](image-10.png)
-   ![alt text](image-11.png)
+  ![alt text](static/images/image-8.png)
+  ![alt text](static/images/image-9.png)
+   ![alt text](static/images/image-10.png)
+   ![alt text](static/images/image-11.png)
 ### Workflow Files
 
 ```
@@ -680,7 +680,7 @@ USE platform;
 SHOW TABLES;
 SELECT * FROM users;
 
-  ![alt text](image-4.png)
+  ![alt text](static/images/image-4.png)
 
 # 6. Cleanup
 kubectl delete pod mysql-proxy -n dev
@@ -709,7 +709,7 @@ curl http://$ALB/prod
 curl http://$ALB/prod/health
 # Response: OK
 ```
-![alt text](image-12.png)
+![alt text](static/images/image-12.png)
 
 ### Database Connectivity Test
 
@@ -752,18 +752,18 @@ kubectl get applications -n argocd
 
 > Add screenshots of the following in this section:
 > - `kubectl get nodes` output
-      ![alt text](image.png)
+      ![alt text](static/images/image.png)
 > - `kubectl get pods -n dev` and `kubectl get pods -n prod`
-      ![alt text](image-13.png)
+      ![alt text](static/images/image-13.png)
 > - `kubectl get applications -n argocd`
-       ![alt text](image-2.png)
+       ![alt text](static/images/image-2.png)
 > - `kubectl get ingress --all-namespaces`
-      ![alt text](image-14.png)
+      ![alt text](static/images/image-14.png)
 > - GitHub Actions pipeline runs showing path-filtered jobs
 > - ArgoCD UI showing Synced/Healthy status
 > - `curl` responses from `/dev` and `/prod` endpoints
 > - AWS Console: ECR repository with pushed images
-     ![alt text](image-3.png)
+     ![alt text](static/images/image-3.png)
 > - AWS Console: RDS instance in EKS VPC
     
 > - AWS Console: S3 bucket with `/dev/` and `/prod/` prefixes
