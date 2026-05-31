@@ -275,7 +275,9 @@ Developer pushes to dev branch
            │
            ▼
   http://<ALB>/dev  ✅
+   ![alt text](image-15.png)
   http://<ALB>/dev/health  ✅
+   ![alt text](image-16.png)
   https://<CF>/dev/*  ✅
 ```
 
@@ -352,7 +354,9 @@ Developer merges dev → production branch
            │
            ▼
   http://<ALB>/prod  ✅
+   ![alt text](image-17.png)
   http://<ALB>/prod/health  ✅
+     ![alt text](image-18.png)
   https://<CF>/prod/*  ✅
 ```
 
@@ -487,10 +491,6 @@ Developer merges dev → production branch
 │  │  ├── /dev/*  → S3/dev/                                        │  │
 │  │  └── /prod/* → S3/prod/                                       │  │
 │  └───────────────────────────────────────────────────────────────┘  │
-│              │                                                       │
-│              ▼                                                       │
-│  User Browser                                                        │
-│  https://d21650mrg2zm50.cloudfront.net/dev/   (Dev Frontend)        │
-│  https://d21650mrg2zm50.cloudfront.net/prod/  (Prod Frontend)       │
+│                                                                            │
 └─────────────────────────────────────────────────────────────────────┘
 ```
