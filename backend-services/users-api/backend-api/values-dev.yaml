@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: 758024567313.dkr.ecr.ap-south-1.amazonaws.com/backend-api-dev
   pullPolicy: IfNotPresent
-  tag: 72f0b7b0f0636e89bb2ba047df1d4cf24928be8b
+  tag: 078b225d7ef4d9794c3a1770e1556de0e1451ff3
 
 serviceAccount:
   create: true
