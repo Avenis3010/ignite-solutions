@@ -73,20 +73,36 @@ jobs:
       run: |
         aws eks update-kubeconfig --name demo-eks --region ap-south-1
     
-    - name: Apply dev migrations
+    - name: Apply dev secret and configmap
       run: |
-        kubectl apply -f migrations/dev/secret.yaml
+        kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret generic rds-secret -n dev \
+          --from-literal=DB_HOST=${{ secrets.DEV_DB_HOST }} \
+          --from-literal=DB_NAME=${{ secrets.DEV_DB_NAME }} \
+          --from-literal=DB_USER=${{ secrets.DEV_DB_USER }} \
+          --from-literal=DB_PASSWORD=${{ secrets.DEV_DB_PASSWORD }} \
+          --dry-run=client -o yaml | kubectl apply -f -
         kubectl apply -f migrations/dev/configmap.yaml
+
+    - name: Run dev migration job
+      run: |
+        kubectl delete job mysql-migration -n dev --ignore-not-found=true
         kubectl apply -f migrations/dev/migration-job.yaml
         kubectl wait --for=condition=complete job/mysql-migration -n dev --timeout=300s
-    
-    - name: Create prod namespace
+
+    - name: Apply prod secret and configmap
       run: |
-        kubectl create namespace prod || true
-    
-    - name: Apply prod migrations
-      run: |
-        kubectl apply -f migrations/prod/secret.yaml
+        kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret generic rds-secret -n prod \
+          --from-literal=DB_HOST=${{ secrets.PROD_DB_HOST }} \
+          --from-literal=DB_NAME=${{ secrets.PROD_DB_NAME }} \
+          --from-literal=DB_USER=${{ secrets.PROD_DB_USER }} \
+          --from-literal=DB_PASSWORD=${{ secrets.PROD_DB_PASSWORD }} \
+          --dry-run=client -o yaml | kubectl apply -f -
         kubectl apply -f migrations/prod/configmap.yaml
+
+    - name: Run prod migration job
+      run: |
+        kubectl delete job mysql-migration -n prod --ignore-not-found=true
         kubectl apply -f migrations/prod/migration-job.yaml
         kubectl wait --for=condition=complete job/mysql-migration -n prod --timeout=300s

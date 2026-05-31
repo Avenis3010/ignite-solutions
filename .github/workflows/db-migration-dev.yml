@@ -3,45 +3,45 @@ name: Database Migration Dev
 on:
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
 
     steps:
-
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Install MySQL Client
-      run: |
-        sudo apt-get update
-        sudo apt-get install mysql-client -y
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::758024567313:role/github-oidc-role
+        aws-region: ap-south-1
 
-    - name: Test Database Connectivity
-      run: |
-       echo "Testing connection to $DB_HOST"
-       timeout 10 bash -c "</dev/tcp/$DB_HOST/3306" && echo "Port 3306 reachable" || echo "Port 3306 NOT reachable"
-     env:
-       DB_HOST: ${{ secrets.DB_HOST }}
+    - name: Update kubeconfig
+      run: aws eks update-kubeconfig --name demo-eks --region ap-south-1
 
-    - name: Verify DB Host
+    - name: Apply dev secret and configmap
       run: |
-        echo "DB_HOST=$DB_HOST"
-        nslookup $DB_HOST
-      env:
-         DB_HOST: ${{ secrets.DB_HOST }}
+        kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret generic rds-secret -n dev \
+          --from-literal=DB_HOST=${{ secrets.DEV_DB_HOST }} \
+          --from-literal=DB_NAME=${{ secrets.DEV_DB_NAME }} \
+          --from-literal=DB_USER=${{ secrets.DEV_DB_USER }} \
+          --from-literal=DB_PASSWORD=${{ secrets.DEV_DB_PASSWORD }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f migrations/dev/configmap.yaml
 
-    - name: Run Migration
-      env:
-        DB_HOST: ${{ secrets.DEV_DB_HOST }}
-        DB_NAME: ${{ secrets.DEV_DB_NAME }}
-        DB_USER: ${{ secrets.DEV_DB_USER }}
-        DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+    - name: Delete previous migration job if exists
+      run: kubectl delete job mysql-migration -n dev --ignore-not-found=true
 
+    - name: Run migration job
       run: |
-        mysql \
-        -h $DB_HOST \
-        -u $DB_USER \
-        -p$DB_PASSWORD \
-        $DB_NAME \
-        < migrations/dev/001_create_users.sql
+        kubectl apply -f migrations/dev/migration-job.yaml
+        kubectl wait --for=condition=complete job/mysql-migration -n dev --timeout=300s
+
+    - name: Print migration logs
+      run: kubectl logs job/mysql-migration -n dev

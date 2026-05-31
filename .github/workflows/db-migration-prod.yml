@@ -3,37 +3,45 @@ name: Database Migration Prod
 on:
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
 
     steps:
-
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Install MySQL Client
-      run: |
-        sudo apt-get update
-        sudo apt-get install mysql-client -y
-        
-    - name: Test DB Connectivity
-      run: |
-        nc -zv $DB_HOST 3306
-      env:
-        DB_HOST: ${{ secrets.PROD_DB_HOST }}
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::758024567313:role/github-oidc-role
+        aws-region: ap-south-1
 
-    - name: Run Migration
-      env:
-        DB_HOST: ${{ secrets.PROD_DB_HOST }}
-        DB_NAME: ${{ secrets.PROD_DB_NAME }}
-        DB_USER: ${{ secrets.PROD_DB_USER }}
-        DB_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+    - name: Update kubeconfig
+      run: aws eks update-kubeconfig --name demo-eks --region ap-south-1
 
+    - name: Apply prod secret and configmap
       run: |
-        mysql \
-        -h $DB_HOST \
-        -u $DB_USER \
-        -p$DB_PASSWORD \
-        $DB_NAME \
-        < migrations/prod/001_create_users.sql
+        kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret generic rds-secret -n prod \
+          --from-literal=DB_HOST=${{ secrets.PROD_DB_HOST }} \
+          --from-literal=DB_NAME=${{ secrets.PROD_DB_NAME }} \
+          --from-literal=DB_USER=${{ secrets.PROD_DB_USER }} \
+          --from-literal=DB_PASSWORD=${{ secrets.PROD_DB_PASSWORD }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f migrations/prod/configmap.yaml
+
+    - name: Delete previous migration job if exists
+      run: kubectl delete job mysql-migration -n prod --ignore-not-found=true
+
+    - name: Run migration job
+      run: |
+        kubectl apply -f migrations/prod/migration-job.yaml
+        kubectl wait --for=condition=complete job/mysql-migration -n prod --timeout=300s
+
+    - name: Print migration logs
+      run: kubectl logs job/mysql-migration -n prod
