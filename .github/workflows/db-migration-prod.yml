@@ -21,7 +21,7 @@ jobs:
       run: |
         nc -zv $DB_HOST 3306
       env:
-      DB_HOST: ${{ secrets.PROD_DB_HOST }}
+        DB_HOST: ${{ secrets.PROD_DB_HOST }}
 
     - name: Run Migration
       env:
