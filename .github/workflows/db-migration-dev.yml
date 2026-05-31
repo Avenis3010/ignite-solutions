@@ -1,0 +1,33 @@
+name: Database Migration Dev
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Install MySQL Client
+      run: |
+        sudo apt-get update
+        sudo apt-get install mysql-client -y
+
+    - name: Run Migration
+      env:
+        DB_HOST: ${{ secrets.DEV_DB_HOST }}
+        DB_NAME: ${{ secrets.DEV_DB_NAME }}
+        DB_USER: ${{ secrets.DEV_DB_USER }}
+        DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+
+      run: |
+        mysql \
+        -h $DB_HOST \
+        -u $DB_USER \
+        -p$DB_PASSWORD \
+        $DB_NAME \
+        < migrations/dev/001_create_users.sql
