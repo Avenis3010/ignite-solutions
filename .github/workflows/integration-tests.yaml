@@ -32,21 +32,23 @@ jobs:
 
     - name: Check Backend API Health
       run: |
+        kubectl delete pod health-check --ignore-not-found=true
         kubectl run health-check --image=curlimages/curl --restart=Never \
-          --command -- curl -f http://backend-api:5000/health
-        kubectl wait --for=condition=complete pod/health-check --timeout=60s
+          --command -- curl -f http://backend-api.default.svc.cluster.local:5000/health
+        kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/health-check --timeout=60s
         kubectl logs health-check
         kubectl delete pod health-check --ignore-not-found=true
 
     - name: Check Database Connection
       run: |
+        kubectl delete pod db-check -n dev --ignore-not-found=true
         kubectl run db-check -n dev --image=mysql:8 --restart=Never \
           --env="MYSQL_PWD=${{ secrets.DEV_DB_PASSWORD }}" \
           --command -- mysql \
             -h platform-mysql-new.cvi2swcoup2y.ap-south-1.rds.amazonaws.com \
             -u admin \
             -e "USE platform; SELECT COUNT(*) FROM users;"
-        kubectl wait --for=condition=complete pod/db-check -n dev --timeout=60s
+        kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/db-check -n dev --timeout=60s
         kubectl logs db-check -n dev
         kubectl delete pod db-check -n dev --ignore-not-found=true
 
