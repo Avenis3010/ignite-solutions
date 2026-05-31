@@ -6,6 +6,8 @@
 
 # Kubernetes
 *.kubeconfig
+migrations/**/secret.yaml
+mysql-job.yaml
 
 # Logs
 *.log
