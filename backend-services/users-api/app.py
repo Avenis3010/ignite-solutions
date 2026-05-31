@@ -8,7 +8,7 @@ ENV = os.getenv("APP_ENV", "dev")
 @app.route(f"/{ENV}/")
 @app.route(f"/{ENV}")
 def home():
-    return f"Backend API Running - Environment: {ENV}"
+    return f"Backend API Running - Environment: {ENV} - v3.0"
 
 @app.route(f"/{ENV}/health")
 def health():
