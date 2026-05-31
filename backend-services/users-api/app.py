@@ -4,7 +4,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Backend API Running"
+    return "Backend API Running version2"
 
 @app.route("/health")
 def health():
