@@ -1,0 +1,161 @@
+name: Prod Pipeline
+
+on:
+  push:
+    branches:
+      - production
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+
+  # ─── BUILD & PUSH BACKEND ───────────────────────────────────────────────────
+  build-backend:
+    name: Build & Push Backend (prod)
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::758024567313:role/github-oidc-role
+          aws-region: ap-south-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push backend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: backend-api-dev
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd backend-services/users-api
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:prod-latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:prod-latest
+
+      - name: Update Helm values-prod.yaml with new image tag
+        run: |
+          sed -i "s/tag: .*/tag: ${{ github.sha }}/" backend-services/users-api/backend-api/values-prod.yaml
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add backend-services/users-api/backend-api/values-prod.yaml
+          git commit -m "chore: update prod image tag to ${{ github.sha }}" || echo "No changes"
+          git push
+
+  # ─── BUILD & DEPLOY FRONTEND ────────────────────────────────────────────────
+  build-frontend:
+    name: Build & Deploy Frontend (prod)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend-services/frontend-apps/web-ui/package-lock.json
+
+      - name: Install & build
+        run: |
+          cd frontend-services/frontend-apps/web-ui
+          npm ci
+          npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::758024567313:role/github-oidc-role
+          aws-region: ap-south-1
+
+      - name: Deploy to S3 under /prod path
+        run: |
+          aws s3 sync frontend-services/frontend-apps/web-ui/build/ \
+            s3://${{ secrets.S3_BUCKET_NAME }}/prod/ --delete
+
+      - name: Invalidate CloudFront /prod path
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/prod/*"
+
+  # ─── DEPLOY BACKEND VIA ARGOCD ──────────────────────────────────────────────
+  deploy-backend:
+    name: Deploy Backend via ArgoCD (prod)
+    runs-on: ubuntu-latest
+    needs: build-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::758024567313:role/github-oidc-role
+          aws-region: ap-south-1
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name demo-eks --region ap-south-1
+
+      - name: Apply ArgoCD prod app
+        run: kubectl apply -f argocd/backend-prod.yaml
+
+      - name: Install ArgoCD CLI
+        run: |
+          sudo curl -sSL -o /usr/local/bin/argocd \
+            https://github.com/argoproj/argo-cd/releases/download/v2.14.7/argocd-linux-amd64
+          sudo chmod +x /usr/local/bin/argocd
+
+      - name: Sync ArgoCD prod app
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} \
+            --username ${{ secrets.ARGOCD_USERNAME }} \
+            --password ${{ secrets.ARGOCD_PASSWORD }} \
+            --insecure --grpc-web
+          argocd app sync backend-api-prod --grpc-web
+          argocd app wait backend-api-prod --sync --health --grpc-web
+
+  # ─── DATABASE MIGRATION ─────────────────────────────────────────────────────
+  database-migration:
+    name: Database Migration (prod)
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::758024567313:role/github-oidc-role
+          aws-region: ap-south-1
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name demo-eks --region ap-south-1
+
+      - name: Apply prod secret and configmap
+        run: |
+          kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic rds-secret -n prod \
+            --from-literal=DB_HOST=${{ secrets.PROD_DB_HOST }} \
+            --from-literal=DB_NAME=${{ secrets.PROD_DB_NAME }} \
+            --from-literal=DB_USER=${{ secrets.PROD_DB_USER }} \
+            --from-literal=DB_PASSWORD=${{ secrets.PROD_DB_PASSWORD }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f migrations/prod/configmap.yaml
+
+      - name: Run migration
+        run: |
+          kubectl delete job mysql-migration -n prod --ignore-not-found=true
+          kubectl apply -f migrations/prod/migration-job.yaml
+          kubectl wait --for=condition=complete job/mysql-migration -n prod --timeout=300s
+
+      - name: Print migration logs
+        run: kubectl logs job/mysql-migration -n prod
