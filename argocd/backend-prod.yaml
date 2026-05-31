@@ -3,24 +3,21 @@ kind: Application
 metadata:
   name: backend-api-prod
   namespace: argocd
-
 spec:
   project: default
-
   source:
     repoURL: https://github.com/Avenis3010/ignite-solutions.git
-    targetRevision: main
+    targetRevision: production
     path: backend-services/users-api/backend-api
-
     helm:
       valueFiles:
         - values-prod.yaml
-
   destination:
     server: https://kubernetes.default.svc
     namespace: prod
-
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
