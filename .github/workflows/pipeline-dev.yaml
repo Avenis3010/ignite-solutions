@@ -11,13 +11,33 @@ permissions:
 
 jobs:
 
+  # ─── DETECT CHANGES ─────────────────────────────────────────────────────────
+  detect-changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      database: ${{ steps.filter.outputs.database }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend-services/**'
+            frontend:
+              - 'frontend-services/**'
+            database:
+              - 'migrations/dev/**'
+
   # ─── BACKEND ────────────────────────────────────────────────────────────────
   build-backend:
     name: Build & Deploy Backend (dev)
     runs-on: ubuntu-latest
-    if: |
-      contains(github.event.head_commit.modified, 'backend-services/') ||
-      contains(github.event.head_commit.added, 'backend-services/')
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -72,8 +92,8 @@ jobs:
             --username ${{ secrets.ARGOCD_USERNAME }} \
             --password ${{ secrets.ARGOCD_PASSWORD }} \
             --insecure --grpc-web
-          argocd app terminate-op backend-api-dev --grpc-web || true
-          sleep 5
+          argocd app terminate-op backend-api-dev --grpc-web 2>/dev/null || true
+          sleep 3
           argocd app sync backend-api-dev --grpc-web --force
           argocd app wait backend-api-dev --sync --health --timeout 120 --grpc-web
 
@@ -81,9 +101,8 @@ jobs:
   build-frontend:
     name: Build & Deploy Frontend (dev)
     runs-on: ubuntu-latest
-    if: |
-      contains(github.event.head_commit.modified, 'frontend-services/') ||
-      contains(github.event.head_commit.added, 'frontend-services/')
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -121,9 +140,8 @@ jobs:
   database-migration:
     name: Database Migration (dev)
     runs-on: ubuntu-latest
-    if: |
-      contains(github.event.head_commit.modified, 'migrations/dev/') ||
-      contains(github.event.head_commit.added, 'migrations/dev/')
+    needs: detect-changes
+    if: needs.detect-changes.outputs.database == 'true'
     steps:
       - uses: actions/checkout@v4
 
