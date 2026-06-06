@@ -1,6 +1,6 @@
 function App() {
   return (
-    <h1>Frontend Application</h1>
+    <h1>Frontend Application - Dev v2.0</h1>
   );
 }
 

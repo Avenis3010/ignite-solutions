@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: 758024567313.dkr.ecr.ap-south-1.amazonaws.com/backend-api-dev
   pullPolicy: IfNotPresent
-  tag: e9d80b8e9bb29323c3f0e785ccf04f09469f83d9
+  tag: 078b225d7ef4d9794c3a1770e1556de0e1451ff3
 
 serviceAccount:
   create: true
@@ -22,16 +22,9 @@ ingress:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/group.name: shared-alb
-  hosts:
-    - http:
-        paths:
-          - path: /dev
-            pathType: Prefix
-            backend:
-              service:
-                name: backend-api
-                port:
-                  number: 5000
+  paths:
+    - path: /dev
+      pathType: Prefix
 
 env:
   - name: APP_ENV
